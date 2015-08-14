@@ -1,0 +1,173 @@
+---
+title: "Reproducible Research Assignment 1"
+author: "Jason Baker"
+date: "August 12, 2015"
+output: html_document
+
+---
+
+
+This assignment provides some analysis and reporting for a series of questions related to activity monitoring data.  The data has been recorded over a two month period (October and November of 2012) and is recorded in 5 minute intervals.   
+  
+The data includes  
+
+* steps    : number of steps taken in a 5 minute interval (NA for no recording)  
+* date     : date of the measurement in YYY-MM-DD  
+* interval : Identifier for the 5 minute interval in which measurement was taken.  
+
+The data has been provided in CSV format.  
+
+***
+
+###Loading and preprocessing data
+#### Load the data and print summary information
+```{r echo=TRUE}
+#read data file and print summary
+data01 <- read.csv("activity.csv", header=TRUE, sep=",", stringsAsFactors = FALSE)
+summary(data01)
+```
+
+#### Create a clean data-set with no NA values
+```{r echo=TRUE}
+#remove cases where data not recorded and add column with R Date object
+data02 <- data01[!is.na(data01$steps),]
+data02$dateobj <- as.Date(data02$date)
+
+summary(data02)
+```
+
+***
+
+###What is the mean total number of steps taken per day?
+Total steps taken :
+```{r echo=TRUE}
+# calculate total steps taken per day
+totalSteps <- aggregate(steps~dateobj, data=data02, sum)
+#present histogram of daily step sum
+hist(totalSteps$steps,main="Daily Step Total Histogram",col = "red", xlab="Number of steps Taken")
+#determin mean and median of total steps per day
+mean02 <- mean(totalSteps$steps)
+median02 <- median(totalSteps$steps)
+```
+The mean value is `r mean02`, the median is `r median02`.  
+
+***
+
+###What is the average daily activity pattern?
+```{r echo=TRUE}
+# Sum the total steps for each interval
+stepsByInterval <- aggregate(steps~interval, data=data02,mean)
+plot(stepsByInterval$interval,stepsByInterval$steps,  type="n", main="Average Steps Taken per Interval", xlab="5 Minute Intervals" , ylab="Number of Steps")
+points(stepsByInterval$interval,stepsByInterval$steps,  type="l", col="blue")
+
+#Find the maximum and plot value
+max <- stepsByInterval[stepsByInterval$steps==max(stepsByInterval$steps),]
+text(max$interval,max$steps, col="red", labels=paste("max: interval=", max[1,1],", ",round(max[1,2], digits=2)," steps" ))
+```
+
+***
+
+###Inputing missing values
+```{r echo=TRUE}
+# determine the total number of missing data (steps=NA)
+na_count <- sum(is.na(data01$steps))
+
+```
+
+Total number of NA rows found: `r na_count`
+
+A strategy for imputing values into the original table  
+1. Find closest average available in stepsByInterval aggregate table (not all intervals are present)
+2. Replace NA value with average
+3. Run analytics again
+
+```{r echo=TRUE}
+# find rows with NA and copy original data for reference
+data03 <- data01
+has_na <- is.na(data03$steps)
+for (i in 1:length(has_na)){
+    if (has_na[i]){
+        step <- stepsByInterval[stepsByInterval$interval==data03[i,3],]
+        if(nrow(step) != 0){
+            data03[i,1] <- step[1,2]
+        }
+        else{
+            lowest <- 0
+            highest <- 2355
+            increment <- 5
+            complete <- 1
+            up <- step$interval
+            down <- step$interval
+            #search for the nearest average value
+            while (complete != 1){
+                up <- up + interval
+                if (up <= highest){
+                    temp <- stepsByInterval[stepsByInterval$interval==up,]
+                    if (nrow(temp) > 0){
+                        complete <- 0
+                        data03[i,1] <- temp[1,2]
+                    }
+                }
+                if (complete != 0){
+                    down <- down - interval
+                    if (down >= lowest){
+                        temp <- stepsByInterval[stepsByInterval$interval==down,]
+                        if (nrow(temp) > 0){
+                            complete <- 0
+                            data03[i,1] <- temp[1,2]
+                        }
+                    }
+                }
+                # set to zero as the worst case and complete
+                if (up > highest && down < lowest){
+                    if (complete > 0){
+                        data03[i,1] <- 0
+                        complete <- 0
+                    }
+                }
+            }
+        }
+    }  
+}
+
+# create the date object column
+data03$dateobj <- as.Date(data03$date)
+
+# determine mean, median and plot historgram
+# calculate total steps taken per day
+totalSteps03 <- aggregate(steps~dateobj, data=data03, sum)
+#present histogram of daily step sum
+hist(totalSteps03$steps,main="Daily Step Total Histogram",col = "red", xlab="Number of steps Taken")
+#determin mean and median of total steps per day
+mean03 <- mean(totalSteps03$steps)
+median03 <- median(totalSteps03$steps)
+```
+The mean value is `r sprintf("%5.1f",mean03)` (previous value was `r sprintf("%5.1f",mean02)`) 
+The median value is `r sprintf("%5.1f",median03)` (previous value was `r sprintf("%5.1f",median02)`)
+Imputing missing values has made very little difference.
+
+***
+
+###Are there differences in activity patterns between weekdays and weekends?  
+
+```{r echo=TRUE}
+ 
+
+data03$weekday <- as.factor(sapply(data03$dateobj, function(x){day <- weekdays(x);if(day != "Saturday" && day != "Sunday"){return ("weekday")}else {return ("weekend")}}))
+
+library(dplyr)
+groupedData03 <- group_by(data03, weekday,interval)
+weekendData <- filter(groupedData03, weekday=="weekend")
+weekendData_ag <- aggregate(steps~interval, data=weekendData, mean)
+weekdayData <- filter(groupedData03, weekday=="weekday")
+weekdayData_ag <- aggregate(steps~interval, data=weekdayData, mean)
+
+# create the panel plot
+par(mfrow=c(2,1))
+plot(weekendData_ag$interval, weekendData_ag$steps, type="n", main="Weekend Step averages", xlab="5 minute intervals", ylab="Average steps per interval")
+points(weekendData_ag$interval, weekendData_ag$steps, type="l", col="red")
+plot(weekdayData_ag$interval, weekdayData_ag$steps, type="n", main="Weekday Step averages", xlab="5 minute intervals", ylab="Average steps per interval")
+points(weekdayData_ag$interval, weekdayData_ag$steps, type="l", col="red")
+```
+
+
